@@ -28,11 +28,14 @@
       border-radius: 16px;
       padding: 24px;
       background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
     }
 
     textarea {
       width: 100%;
-      min-height: 260px;
+      min-height: 220px;
       border: none;
       outline: none;
       resize: none;
@@ -46,11 +49,131 @@
     textarea::placeholder {
       color: #cccccc;
     }
+
+    .divider {
+      height: 1px;
+      background: #eeeeee;
+    }
+
+    .audio-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .upload-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: none;
+      border: 1px solid #dddddd;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: #888888;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    .upload-btn:active {
+      border-color: #111111;
+      color: #111111;
+    }
+
+    .upload-btn svg {
+      flex-shrink: 0;
+    }
+
+    .audio-player {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .audio-player.visible {
+      display: flex;
+    }
+
+    .audio-name {
+      font-size: 13px;
+      color: #888888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    audio {
+      width: 100%;
+      height: 36px;
+      outline: none;
+    }
+
+    audio::-webkit-media-controls-panel {
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+
+    .remove-btn {
+      background: none;
+      border: none;
+      font-size: 12px;
+      color: #bbbbbb;
+      cursor: pointer;
+      text-align: left;
+      padding: 0;
+    }
+
+    #file-input {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <textarea placeholder="문장을 입력하세요"></textarea>
+
+    <div class="divider"></div>
+
+    <div class="audio-section">
+      <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M8 1v9M5 4l3-3 3 3" stroke="#aaaaaa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2" stroke="#aaaaaa" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        음성 파일 올리기
+      </button>
+
+      <div class="audio-player" id="audio-player">
+        <div class="audio-name" id="audio-name"></div>
+        <audio id="audio-el" controls></audio>
+        <button class="remove-btn" onclick="removeAudio()">삭제</button>
+      </div>
+    </div>
   </div>
+
+  <input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
+
+  <script>
+    function loadAudio(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const url = URL.createObjectURL(file);
+      document.getElementById('audio-el').src = url;
+      document.getElementById('audio-name').textContent = file.name;
+      document.getElementById('audio-player').classList.add('visible');
+    }
+
+    function removeAudio() {
+      const audio = document.getElementById('audio-el');
+      URL.revokeObjectURL(audio.src);
+      audio.src = '';
+      document.getElementById('audio-name').textContent = '';
+      document.getElementById('audio-player').classList.remove('visible');
+      document.getElementById('file-input').value = '';
+    }
+  </script>
 </body>
 </html>
