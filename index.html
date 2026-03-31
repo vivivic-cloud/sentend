@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>sentend</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 390px;
+      border: 1px solid #111111;
+      border-radius: 16px;
+      padding: 24px;
+      background: #ffffff;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      border: none;
+      outline: none;
+      resize: none;
+      font-size: 17px;
+      line-height: 1.7;
+      color: #111111;
+      background: transparent;
+      caret-color: #111111;
+    }
+
+    textarea::placeholder {
+      color: #cccccc;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <textarea placeholder="문장을 입력하세요"></textarea>
+  </div>
+</body>
+</html>
