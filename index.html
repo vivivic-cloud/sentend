@@ -15,9 +15,9 @@
       background: #ffffff;
       min-height: 100vh;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
-      padding: 24px;
+      padding: 32px 24px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
 
@@ -113,7 +113,6 @@
       padding: 0;
     }
 
-    /* 상태 메시지 */
     .status {
       font-size: 13px;
       color: #aaaaaa;
@@ -122,43 +121,6 @@
 
     .status.visible {
       display: block;
-    }
-
-    /* API 키 설정 */
-    .key-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .key-input {
-      flex: 1;
-      border: 1px solid #eeeeee;
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 13px;
-      color: #111111;
-      outline: none;
-    }
-
-    .key-input::placeholder {
-      color: #cccccc;
-    }
-
-    .key-save-btn {
-      background: #111111;
-      color: #ffffff;
-      border: none;
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: 13px;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .key-label {
-      font-size: 11px;
-      color: #cccccc;
     }
 
     #file-input {
@@ -188,57 +150,28 @@
         <button class="remove-btn" onclick="removeAudio()">삭제</button>
       </div>
     </div>
-
-    <div class="divider"></div>
-
-    <!-- API 키 입력 -->
-    <div>
-      <div class="key-label" style="margin-bottom:6px;">OpenAI API Key</div>
-      <div class="key-row">
-        <input class="key-input" id="key-input" type="password" placeholder="sk-..." />
-        <button class="key-save-btn" onclick="saveKey()">저장</button>
-      </div>
-    </div>
   </div>
 
   <input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
 
   <script>
-    // 저장된 키 불러오기
-    const saved = localStorage.getItem('oai_key');
-    if (saved) document.getElementById('key-input').value = saved;
-
-    function saveKey() {
-      const key = document.getElementById('key-input').value.trim();
-      if (!key) return;
-      localStorage.setItem('oai_key', key);
-      alert('저장됐습니다.');
-    }
-
-    function getKey() {
-      return localStorage.getItem('oai_key') || document.getElementById('key-input').value.trim();
+    let API_KEY = localStorage.getItem('oai_key');
+    if (!API_KEY) {
+      API_KEY = prompt('OpenAI API 키를 입력하세요 (한 번만 입력하면 저장됩니다)');
+      if (API_KEY) localStorage.setItem('oai_key', API_KEY);
     }
 
     async function loadAudio(e) {
       const file = e.target.files[0];
       if (!file) return;
 
-      const key = getKey();
-      if (!key) {
-        alert('API 키를 먼저 입력해주세요.');
-        return;
-      }
-
-      // 플레이어 표시
       const url = URL.createObjectURL(file);
       document.getElementById('audio-el').src = url;
       document.getElementById('audio-player').classList.add('visible');
 
-      // 분석 시작
       const btn = document.getElementById('upload-btn');
       const status = document.getElementById('status');
       btn.disabled = true;
-      btn.querySelector('span') && (btn.querySelector('span').textContent = '');
       status.textContent = '분석 중...';
       status.classList.add('visible');
 
@@ -250,7 +183,7 @@
 
         const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${key}` },
+          headers: { Authorization: `Bearer ${API_KEY}` },
           body: formData,
         });
 
