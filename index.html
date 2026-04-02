@@ -29,48 +29,41 @@
       gap: 20px;
     }
 
-    /* 대본 입력 */
-    textarea {
-      width: 100%;
+    /* 자막 영역 */
+    .subtitle-area {
       min-height: 200px;
-      border: none;
-      outline: none;
-      resize: none;
       font-size: 17px;
       line-height: 1.85;
-      color: #111;
-      background: transparent;
-      caret-color: #111;
-    }
-    textarea::placeholder { color: #ccc; }
-    textarea.hidden { display: none; }
-
-    /* 싱크 뷰 */
-    .sync-view {
-      display: none;
-      font-size: 17px;
-      line-height: 1.85;
-      color: #ccc;
-      min-height: 200px;
+      color: #ddd;
       word-break: keep-all;
     }
-    .sync-view.visible { display: block; }
+
+    .subtitle-area.empty::after {
+      content: '음성을 올리면 자막이 생성됩니다';
+      color: #ccc;
+    }
 
     .word {
       display: inline;
-      transition: color 0.1s;
       border-radius: 3px;
       padding: 0 1px;
+      transition: color 0.08s;
     }
-    .word.active {
-      color: #111;
-      background: #f0f0f0;
-    }
-    .word.done { color: #111; }
+    .word.done   { color: #111; }
+    .word.active { color: #111; background: #f0f0f0; }
 
     .divider { height: 1px; background: #eee; }
 
-    /* 음성 업로드 */
+    /* 오디오 플레이어 */
+    .player-wrap {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .player-wrap.visible { display: flex; }
+    audio { width: 100%; outline: none; }
+
+    /* 업로드 버튼 */
     .upload-btn {
       display: flex;
       align-items: center;
@@ -88,41 +81,14 @@
     }
     .upload-btn:active { border-color: #111; color: #111; }
 
-    .player-wrap {
-      display: none;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .player-wrap.visible { display: flex; }
-
-    audio { width: 100%; outline: none; }
-
-    /* 분석 버튼 */
-    .analyze-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      background: #111;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 13px 16px;
-      font-size: 14px;
-      cursor: pointer;
-      width: 100%;
-      transition: opacity 0.15s;
-    }
-    .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
     .remove-btn {
       background: none;
       border: none;
       font-size: 12px;
       color: #bbb;
       cursor: pointer;
-      text-align: left;
       padding: 0;
+      text-align: left;
     }
 
     .status {
@@ -131,9 +97,33 @@
       text-align: center;
       min-height: 18px;
     }
-
     .pulse { animation: pulse 1s ease-in-out infinite; display: inline-block; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* API 키 */
+    .key-row { display: flex; gap: 8px; }
+    .key-input {
+      flex: 1;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #111;
+      outline: none;
+    }
+    .key-input::placeholder { color: #ccc; }
+    .key-save-btn {
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .key-label { font-size: 11px; color: #bbb; margin-bottom: 6px; }
+    .key-saved { font-size: 11px; color: #bbb; margin-top: 4px; }
 
     #file-input { display: none; }
   </style>
@@ -141,13 +131,12 @@
 <body>
 <div class="card">
 
-  <!-- 대본 -->
-  <textarea id="textarea" placeholder="대본을 입력하세요"></textarea>
-  <div class="sync-view" id="sync-view"></div>
+  <!-- 자막 -->
+  <div class="subtitle-area empty" id="subtitle"></div>
 
   <div class="divider"></div>
 
-  <!-- 음성 업로드 -->
+  <!-- 업로드 -->
   <button class="upload-btn" onclick="document.getElementById('file-input').click()">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <path d="M8 1v9M5 4l3-3 3 3" stroke="#aaa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -158,7 +147,6 @@
 
   <div class="player-wrap" id="player-wrap">
     <audio id="audio" controls></audio>
-    <button class="analyze-btn" id="analyze-btn" onclick="analyze()" disabled>타이밍 분석하기</button>
     <button class="remove-btn" onclick="removeAudio()">삭제</button>
   </div>
 
@@ -167,15 +155,13 @@
   <div class="divider"></div>
 
   <!-- API 키 -->
-  <div id="key-section">
-    <div style="font-size:11px;color:#bbb;margin-bottom:6px;">Groq API Key</div>
-    <div style="display:flex;gap:8px;">
-      <input id="key-input" type="password" placeholder="gsk_..."
-        style="flex:1;border:1px solid #eee;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;" />
-      <button onclick="saveKey()"
-        style="background:#111;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap;">저장</button>
+  <div>
+    <div class="key-label">Groq API Key</div>
+    <div class="key-row">
+      <input class="key-input" id="key-input" type="password" placeholder="gsk_..." />
+      <button class="key-save-btn" onclick="saveKey()">저장</button>
     </div>
-    <div id="key-status" style="font-size:11px;color:#bbb;margin-top:5px;"></div>
+    <div class="key-saved" id="key-saved"></div>
   </div>
 
 </div>
@@ -183,127 +169,73 @@
 <input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
 
 <script>
-  // Groq API 키
   let GROQ_KEY = localStorage.getItem('groq_key') || '';
-  const keyInput = document.getElementById('key-input');
-  const keyStatus = document.getElementById('key-status');
+  let audioFile = null;
+  let wordTimings = [];
+  let lastActiveIdx = -1;
+
+  // 키 불러오기
   if (GROQ_KEY) {
-    keyInput.value = GROQ_KEY;
-    keyStatus.textContent = '키 저장됨 ✓';
+    document.getElementById('key-input').value = GROQ_KEY;
+    document.getElementById('key-saved').textContent = '저장됨 ✓';
   }
 
   function saveKey() {
-    const v = keyInput.value.trim();
+    const v = document.getElementById('key-input').value.trim();
     if (!v) return;
     GROQ_KEY = v;
     localStorage.setItem('groq_key', v);
-    keyStatus.textContent = '저장됨 ✓';
+    document.getElementById('key-saved').textContent = '저장됨 ✓';
   }
 
-  let audioFile = null;
-  let wordTimings = []; // [{word, start, end, elIdx}]
-
-  // ── 파일 로드 ──────────────────────────────────────
-  function loadAudio(e) {
+  // ── 파일 로드 & 자동 분석 ─────────────────────────
+  async function loadAudio(e) {
     audioFile = e.target.files[0];
     if (!audioFile) return;
+
+    GROQ_KEY = localStorage.getItem('groq_key') || document.getElementById('key-input').value.trim();
+    if (!GROQ_KEY) { alert('Groq API 키를 먼저 저장해주세요.'); return; }
+
+    // 플레이어 세팅
     const url = URL.createObjectURL(audioFile);
     document.getElementById('audio').src = url;
     document.getElementById('player-wrap').classList.add('visible');
-    document.getElementById('analyze-btn').disabled = false;
-    document.getElementById('status').textContent = '';
 
-    // 싱크뷰 리셋 → 텍스트 편집으로 복귀
-    resetSyncView();
+    // 자막 리셋
+    const subtitle = document.getElementById('subtitle');
+    subtitle.innerHTML = '';
+    subtitle.classList.add('empty');
+    wordTimings = [];
+    lastActiveIdx = -1;
+
+    // 자동 분석
+    await analyze();
   }
 
   function removeAudio() {
     const audio = document.getElementById('audio');
     URL.revokeObjectURL(audio.src);
     audio.src = '';
+    audio.ontimeupdate = null;
     audioFile = null;
     document.getElementById('player-wrap').classList.remove('visible');
     document.getElementById('file-input').value = '';
     document.getElementById('status').textContent = '';
+    const subtitle = document.getElementById('subtitle');
+    subtitle.innerHTML = '';
+    subtitle.classList.add('empty');
     wordTimings = [];
-    resetSyncView();
+    lastActiveIdx = -1;
   }
 
-  function resetSyncView() {
-    document.getElementById('textarea').classList.remove('hidden');
-    document.getElementById('sync-view').classList.remove('visible');
-    document.getElementById('sync-view').innerHTML = '';
-    wordTimings = [];
-  }
-
-  // ── 오디오 압축 (16kHz 모노 WAV) ─────────────────
-  async function compressAudio(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const audioCtx = new AudioContext({ sampleRate: 16000 });
-    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
-
-    // 모노 변환
-    const monoData = new Float32Array(decoded.length);
-    for (let ch = 0; ch < decoded.numberOfChannels; ch++) {
-      const channelData = decoded.getChannelData(ch);
-      for (let i = 0; i < decoded.length; i++) monoData[i] += channelData[i];
-    }
-    for (let i = 0; i < monoData.length; i++) monoData[i] /= decoded.numberOfChannels;
-
-    // WAV 인코딩
-    const wavBuffer = encodeWav(monoData, 16000);
-    await audioCtx.close();
-    return new File([wavBuffer], 'audio.wav', { type: 'audio/wav' });
-  }
-
-  function encodeWav(samples, sampleRate) {
-    const buf = new ArrayBuffer(44 + samples.length * 2);
-    const view = new DataView(buf);
-    const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + samples.length * 2, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, 'data');
-    view.setUint32(40, samples.length * 2, true);
-    let off = 44;
-    for (let i = 0; i < samples.length; i++) {
-      const s = Math.max(-1, Math.min(1, samples[i]));
-      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-      off += 2;
-    }
-    return buf;
-  }
-
-  // ── 분석 ──────────────────────────────────────────
+  // ── Groq 분석 ─────────────────────────────────────
   async function analyze() {
-    const script = document.getElementById('textarea').value.trim();
-    if (!script) { alert('대본을 먼저 입력해주세요.'); return; }
-    if (!audioFile) { alert('음성 파일을 먼저 올려주세요.'); return; }
-    GROQ_KEY = localStorage.getItem('groq_key') || keyInput.value.trim();
-    if (!GROQ_KEY) { alert('Groq API 키를 먼저 저장해주세요.'); return; }
-
-    const btn = document.getElementById('analyze-btn');
     const status = document.getElementById('status');
-    btn.disabled = true;
     status.innerHTML = '<span class="pulse">● 분석 중...</span>';
 
     try {
-      // 25MB 이상일 때만 압축
-      const fileToSend = audioFile.size > 25 * 1024 * 1024
-        ? await (async () => { status.innerHTML = '<span class="pulse">● 압축 중...</span>'; return compressAudio(audioFile); })()
-        : audioFile;
-      status.innerHTML = '<span class="pulse">● 분석 중...</span>';
-
       const formData = new FormData();
-      formData.append('file', fileToSend);
+      formData.append('file', audioFile);
       formData.append('model', 'whisper-large-v3');
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'word');
@@ -317,128 +249,45 @@
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.error?.message || '분석 오류');
+        throw new Error(err.error?.message || '오류');
       }
 
       const data = await res.json();
-      console.log('Groq 응답:', JSON.stringify(data).slice(0, 500));
+      const words = data.words || [];
+      if (!words.length) throw new Error('단어를 인식하지 못했습니다.');
 
-      // segments fallback: words 없으면 segments로 시도
-      let words = data.words || [];
-      if (!words.length && data.segments?.length) {
-        // segment를 word처럼 변환
-        words = data.segments.map(s => ({
-          word: s.text.trim(),
-          start: s.start,
-          end: s.end
-        }));
-      }
-
-      if (!words.length) throw new Error(`타임스탬프 없음. 응답: ${JSON.stringify(data).slice(0,200)}`);
-
-      buildSyncView(script, words);
-      status.textContent = `완료 (${words.length}개 단어) — 재생하면 따라가요`;
+      renderSubtitle(words);
+      status.textContent = '';
 
     } catch (err) {
       status.textContent = '오류: ' + err.message;
-      btn.disabled = false;
     }
   }
 
-  // ── 싱크뷰 빌드 ───────────────────────────────────
-  function norm(str) {
-    // 한글, 일본어(히라가나·가타카나·한자·전각), 영숫자 유지
-    return str.replace(/[^\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]/g, '').toLowerCase();
-  }
+  // ── 자막 렌더링 ───────────────────────────────────
+  function renderSubtitle(words) {
+    const subtitle = document.getElementById('subtitle');
+    subtitle.classList.remove('empty');
 
-  function buildSyncView(script, apiWords) {
-    const tokens = tokenize(script);
-    const scriptWords = tokens.filter(t => t.isWord);
-    const totalDuration = apiWords[apiWords.length - 1].end;
-
-    // ① API 단어 → 누적 문자 위치별 타임스탬프 배열 구성
-    const apiCharTimes = []; // index → time (start of that char)
-    for (const w of apiWords) {
-      const nc = norm(w.word);
-      if (!nc.length) continue;
-      const perChar = (w.end - w.start) / nc.length;
-      for (let i = 0; i < nc.length; i++) {
-        apiCharTimes.push(w.start + i * perChar);
-      }
-    }
-    apiCharTimes.push(totalDuration); // 끝 sentinel
-    const totalApiChars = apiCharTimes.length - 1;
-
-    // ② 스크립트 정규화 총 글자 수
-    const scriptNormLengths = scriptWords.map(w => norm(w.text).length);
-    const totalScriptChars = scriptNormLengths.reduce((a, b) => a + b, 0);
-
-    // ③ 비율 기반 타임스탬프 매핑
-    // 스크립트 글자 위치 / 전체 → API 글자 위치 / 전체 → 시간
-    let scriptCharPos = 0;
-    scriptWords.forEach((sw, wi) => {
-      const len = scriptNormLengths[wi];
-      if (!len) { sw.start = 0; sw.end = 0.05; scriptCharPos += len; return; }
-
-      const startRatio = scriptCharPos / totalScriptChars;
-      const endRatio   = (scriptCharPos + len) / totalScriptChars;
-
-      const apiStart = Math.min(Math.floor(startRatio * totalApiChars), totalApiChars - 1);
-      const apiEnd   = Math.min(Math.ceil(endRatio   * totalApiChars), totalApiChars);
-
-      sw.start = apiCharTimes[apiStart];
-      sw.end   = apiCharTimes[apiEnd];
-      scriptCharPos += len;
-    });
-
-    // ④ HTML 렌더링
     wordTimings = [];
     let html = '';
-    let wi = 0;
-    tokens.forEach(tok => {
-      if (tok.isWord) {
-        const id = `w${wi}`;
-        wordTimings.push({ start: scriptWords[wi].start, end: scriptWords[wi].end, id });
-        html += `<span class="word" id="${id}">${escHtml(tok.text)}</span>`;
-        wi++;
-      } else {
-        html += escHtml(tok.text);
-      }
+
+    words.forEach((w, i) => {
+      const id = `w${i}`;
+      wordTimings.push({ start: w.start, end: w.end, id });
+      // 단어 앞 공백 (일본어는 공백 없이, 영어는 공백)
+      const space = i > 0 ? ' ' : '';
+      html += `${space}<span class="word" id="${id}">${escHtml(w.word)}</span>`;
     });
 
-    const syncView = document.getElementById('sync-view');
-    syncView.innerHTML = html;
-    syncView.classList.add('visible');
-    document.getElementById('textarea').classList.add('hidden');
+    subtitle.innerHTML = html;
 
-    lastActiveIdx = -1;
     const audio = document.getElementById('audio');
     audio.ontimeupdate = () => updateHighlight(audio.currentTime);
   }
 
-  function tokenize(text) {
-    const tokens = [];
-    let i = 0;
-    while (i < text.length) {
-      if (/[\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff]/.test(text[i])) {
-        let j = i;
-        while (j < text.length && /[\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff]/.test(text[j])) j++;
-        tokens.push({ text: text.slice(i, j), isWord: true });
-        i = j;
-      } else {
-        tokens.push({ text: text[i], isWord: false });
-        i++;
-      }
-    }
-    return tokens;
-  }
-
-
-  // ── 재생 싱크 ─────────────────────────────────────
-  let lastActiveIdx = -1;
-
+  // ── 하이라이트 ────────────────────────────────────
   function updateHighlight(t) {
-    // 이진탐색으로 현재 단어 찾기
     let lo = 0, hi = wordTimings.length - 1, cur = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
@@ -446,28 +295,22 @@
       else if (wordTimings[mid].start > t) hi = mid - 1;
       else { cur = mid; break; }
     }
+
     if (cur === lastActiveIdx) return;
 
-    // 이전 active 해제
     if (lastActiveIdx >= 0) {
       const prev = document.getElementById(wordTimings[lastActiveIdx].id);
       if (prev) { prev.classList.remove('active'); prev.classList.add('done'); }
     }
-    // 지나간 것들 done 처리
-    if (cur > lastActiveIdx) {
-      for (let i = Math.max(0, lastActiveIdx); i < cur; i++) {
+    if (cur > lastActiveIdx + 1) {
+      for (let i = Math.max(0, lastActiveIdx + 1); i < cur; i++) {
         const el = document.getElementById(wordTimings[i].id);
         if (el) { el.classList.remove('active'); el.classList.add('done'); }
       }
     }
-
     if (cur >= 0) {
       const el = document.getElementById(wordTimings[cur].id);
-      if (el) {
-        el.classList.add('active');
-        el.classList.remove('done');
-        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      }
+      if (el) { el.classList.add('active'); el.classList.remove('done'); el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
     }
     lastActiveIdx = cur;
   }
