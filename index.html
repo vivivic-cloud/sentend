@@ -304,7 +304,7 @@
 
       const formData = new FormData();
       formData.append('file', fileToSend);
-      formData.append('model', 'whisper-large-v3-turbo');
+      formData.append('model', 'whisper-large-v3');
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'word');
       formData.append('language', 'ko');
