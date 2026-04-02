@@ -267,14 +267,17 @@
     const btn = document.getElementById('analyze-btn');
     const status = document.getElementById('status');
     btn.disabled = true;
-    status.innerHTML = '<span class="pulse">● 압축 중...</span>';
+    status.innerHTML = '<span class="pulse">● 분석 중...</span>';
 
     try {
-      const compressed = await compressAudio(audioFile);
+      // 25MB 이상일 때만 압축
+      const fileToSend = audioFile.size > 25 * 1024 * 1024
+        ? await (async () => { status.innerHTML = '<span class="pulse">● 압축 중...</span>'; return compressAudio(audioFile); })()
+        : audioFile;
       status.innerHTML = '<span class="pulse">● 분석 중...</span>';
 
       const formData = new FormData();
-      formData.append('file', compressed);
+      formData.append('file', fileToSend);
       formData.append('model', 'whisper-large-v3-turbo');
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'word');
