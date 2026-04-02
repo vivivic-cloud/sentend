@@ -321,12 +321,23 @@
       }
 
       const data = await res.json();
-      const words = data.words || [];
+      console.log('Groq 응답:', JSON.stringify(data).slice(0, 500));
 
-      if (!words.length) throw new Error('단어 타임스탬프를 가져오지 못했습니다.');
+      // segments fallback: words 없으면 segments로 시도
+      let words = data.words || [];
+      if (!words.length && data.segments?.length) {
+        // segment를 word처럼 변환
+        words = data.segments.map(s => ({
+          word: s.text.trim(),
+          start: s.start,
+          end: s.end
+        }));
+      }
+
+      if (!words.length) throw new Error(`타임스탬프 없음. 응답: ${JSON.stringify(data).slice(0,200)}`);
 
       buildSyncView(script, words);
-      status.textContent = '완료 — 재생하면 대본이 따라가요';
+      status.textContent = `완료 (${words.length}개 단어) — 재생하면 따라가요`;
 
     } catch (err) {
       status.textContent = '오류: ' + err.message;
