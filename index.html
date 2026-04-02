@@ -346,40 +346,59 @@
   }
 
   // ── 싱크뷰 빌드 ───────────────────────────────────
-  function normalize(str) {
-    return str.replace(/[\s\.,!?~\-""''「」『』]/g, '').toLowerCase();
+  function norm(str) {
+    return str.replace(/[^\wㄱ-힣]/g, '').toLowerCase();
   }
 
   function buildSyncView(script, apiWords) {
-    // 대본을 단어 단위로 쪼개되 공백/구두점 포함 토큰 유지
     const tokens = tokenize(script);
-
-    // API 단어와 대본 단어 매핑 (DP 정렬)
     const scriptWords = tokens.filter(t => t.isWord);
-    const aligned = alignWords(scriptWords.map(t => t.text), apiWords.map(w => w.word));
+    const totalDuration = Math.max(...apiWords.map(w => w.end));
 
-    // 각 scriptWord에 타임스탬프 부여
-    aligned.forEach(([si, ai]) => {
-      if (si !== null && ai !== null) {
-        scriptWords[si].start = apiWords[ai].start;
-        scriptWords[si].end   = apiWords[ai].end;
+    // ① 문자 단위 타임라인 구성 (API 기준)
+    const apiNormChars = []; // {char, time}
+    for (const w of apiWords) {
+      const nc = norm(w.word);
+      if (!nc.length) continue;
+      const perChar = (w.end - w.start) / nc.length;
+      for (let i = 0; i < nc.length; i++) {
+        apiNormChars.push({ char: nc[i], time: w.start + i * perChar, endTime: w.start + (i+1) * perChar });
       }
+    }
+
+    // ② 대본 정규화 문자열 → API 문자열과 LCS로 정렬
+    const scriptNorm = scriptWords.map(w => norm(w.text));
+    const scriptNormFlat = scriptNorm.join('');
+    const apiNormFlat = apiNormChars.map(c => c.char).join('');
+
+    // 각 스크립트 단어의 시작/끝 문자 인덱스 → API 타임라인 매핑
+    let charIdx = 0;
+    scriptWords.forEach((sw, wi) => {
+      const nc = scriptNorm[wi];
+      if (!nc.length) { sw.start = 0; sw.end = 0; charIdx += nc.length; return; }
+
+      // scriptNormFlat 내 위치로 API chars에서 찾기
+      const pos = findBestMatch(scriptNormFlat, charIdx, nc.length, apiNormFlat);
+      if (pos !== -1 && pos + nc.length <= apiNormChars.length) {
+        sw.start = apiNormChars[pos].time;
+        sw.end   = apiNormChars[Math.min(pos + nc.length - 1, apiNormChars.length-1)].endTime;
+      }
+      charIdx += nc.length;
     });
 
-    // 보간: 타임스탬프 없는 단어는 앞뒤 값으로 추정
-    interpolateTiming(scriptWords);
+    // ③ 앵커 없는 단어 보간
+    fillTiming(scriptWords, totalDuration);
 
-    // HTML 렌더링
+    // ④ HTML 렌더링
     wordTimings = [];
     let html = '';
-    let widx = 0;
+    let wi = 0;
     tokens.forEach(tok => {
       if (tok.isWord) {
-        const id = `w${widx}`;
-        const sw = scriptWords[widx];
-        wordTimings.push({ start: sw.start ?? 0, end: sw.end ?? 0, id });
+        const id = `w${wi}`;
+        wordTimings.push({ start: scriptWords[wi].start, end: scriptWords[wi].end, id });
         html += `<span class="word" id="${id}">${escHtml(tok.text)}</span>`;
-        widx++;
+        wi++;
       } else {
         html += escHtml(tok.text);
       }
@@ -390,16 +409,38 @@
     syncView.classList.add('visible');
     document.getElementById('textarea').classList.add('hidden');
 
-    // 오디오 timeupdate 연결
+    lastActiveIdx = -1;
     const audio = document.getElementById('audio');
     audio.ontimeupdate = () => updateHighlight(audio.currentTime);
+  }
+
+  // 슬라이딩 윈도우로 가장 잘 맞는 위치 탐색
+  function findBestMatch(scriptFlat, from, len, apiFlat) {
+    // scriptFlat[from..from+len] 을 apiFlat에서 찾기
+    const target = scriptFlat.slice(from, from + len);
+    // 비율로 예상 위치 계산
+    const ratio = apiFlat.length / (scriptFlat.length || 1);
+    const expected = Math.round(from * ratio);
+    const window = Math.max(30, Math.round(apiFlat.length * 0.15));
+
+    let bestPos = -1, bestScore = -1;
+    const lo = Math.max(0, expected - window);
+    const hi = Math.min(apiFlat.length - len, expected + window);
+
+    for (let i = lo; i <= hi; i++) {
+      let score = 0;
+      for (let j = 0; j < Math.min(len, apiFlat.length - i); j++) {
+        if (target[j] === apiFlat[i + j]) score++;
+      }
+      if (score > bestScore) { bestScore = score; bestPos = i; }
+    }
+    return bestScore > len * 0.3 ? bestPos : -1;
   }
 
   function tokenize(text) {
     const tokens = [];
     let i = 0;
     while (i < text.length) {
-      // 단어 수집 (한글, 영문, 숫자)
       if (/[\wㄱ-힣]/.test(text[i])) {
         let j = i;
         while (j < text.length && /[\wㄱ-힣]/.test(text[j])) j++;
@@ -413,75 +454,90 @@
     return tokens;
   }
 
-  // 단순 LCS 기반 정렬
-  function alignWords(scriptWords, apiWords) {
-    const S = scriptWords.map(normalize);
-    const A = apiWords.map(normalize);
-    const n = S.length, m = A.length;
-    const dp = Array.from({length: n+1}, () => new Array(m+1).fill(0));
+  function fillTiming(words, totalDuration) {
+    const n = words.length;
+    if (!n) return;
 
-    for (let i = 1; i <= n; i++)
-      for (let j = 1; j <= m; j++)
-        dp[i][j] = S[i-1] === A[j-1]
-          ? dp[i-1][j-1] + 1
-          : Math.max(dp[i-1][j], dp[i][j-1]);
-
-    const result = [];
-    let i = n, j = m;
-    while (i > 0 && j > 0) {
-      if (S[i-1] === A[j-1]) { result.push([i-1, j-1]); i--; j--; }
-      else if (dp[i-1][j] >= dp[i][j-1]) i--;
-      else j--;
+    // 앵커 없으면 균등 분배
+    const hasAny = words.some(w => w.start != null);
+    if (!hasAny) {
+      const dur = totalDuration / n;
+      words.forEach((w, i) => { w.start = i * dur; w.end = (i+1) * dur; });
+      return;
     }
-    return result.reverse();
-  }
 
-  function interpolateTiming(words) {
-    // 앞에서 채우기
-    for (let i = 1; i < words.length; i++) {
-      if (words[i].start == null && words[i-1].end != null) {
-        words[i].start = words[i-1].end;
-        words[i].end   = words[i-1].end + 0.3;
+    // 앵커 사이 선형 보간
+    // 첫 앵커 이전
+    const firstAnchor = words.findIndex(w => w.start != null);
+    for (let i = 0; i < firstAnchor; i++) {
+      const dur = words[firstAnchor].start / (firstAnchor + 1);
+      words[i].start = i * dur;
+      words[i].end = (i+1) * dur;
+    }
+    // 구간별 보간
+    for (let i = firstAnchor; i < n - 1; i++) {
+      if (words[i+1].start == null) {
+        // 다음 앵커 찾기
+        let nextAnchor = -1;
+        for (let k = i+1; k < n; k++) { if (words[k].start != null) { nextAnchor = k; break; } }
+        if (nextAnchor === -1) {
+          // 끝까지 균등
+          const remaining = n - i - 1;
+          const dur = (totalDuration - words[i].end) / (remaining + 1);
+          for (let k = i+1; k < n; k++) {
+            words[k].start = words[i].end + (k - i - 1) * dur;
+            words[k].end = words[k].start + dur;
+          }
+          break;
+        } else {
+          const gap = nextAnchor - i;
+          const segDur = (words[nextAnchor].start - words[i].end) / gap;
+          for (let k = i+1; k < nextAnchor; k++) {
+            words[k].start = words[i].end + (k - i - 1) * segDur;
+            words[k].end = words[k].start + segDur;
+          }
+        }
       }
     }
-    // 뒤에서 채우기
-    for (let i = words.length - 2; i >= 0; i--) {
-      if (words[i].end == null && words[i+1].start != null) {
-        words[i].end   = words[i+1].start;
-        words[i].start = Math.max(0, words[i+1].start - 0.3);
-      }
-    }
-    // 남은 건 0으로
-    words.forEach(w => { w.start = w.start ?? 0; w.end = w.end ?? 0; });
+    words.forEach(w => { w.start = w.start ?? 0; w.end = w.end ?? 0.1; });
   }
 
   // ── 재생 싱크 ─────────────────────────────────────
-  let lastActiveId = null;
+  let lastActiveIdx = -1;
 
   function updateHighlight(t) {
-    for (let i = 0; i < wordTimings.length; i++) {
-      const { start, end, id } = wordTimings[i];
-      const el = document.getElementById(id);
-      if (!el) continue;
+    // 이진탐색으로 현재 단어 찾기
+    let lo = 0, hi = wordTimings.length - 1, cur = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (wordTimings[mid].end <= t) lo = mid + 1;
+      else if (wordTimings[mid].start > t) hi = mid - 1;
+      else { cur = mid; break; }
+    }
+    if (cur === lastActiveIdx) return;
 
-      if (t >= start && t < end) {
-        if (lastActiveId !== id) {
-          if (lastActiveId) {
-            const prev = document.getElementById(lastActiveId);
-            if (prev) { prev.classList.remove('active'); prev.classList.add('done'); }
-          }
-          el.classList.add('active');
-          el.classList.remove('done');
-          lastActiveId = id;
-          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        }
-      } else if (t >= end) {
-        el.classList.remove('active');
-        el.classList.add('done');
-      } else {
-        el.classList.remove('active', 'done');
+    // 이전 active 해제
+    if (lastActiveIdx >= 0) {
+      const prev = document.getElementById(wordTimings[lastActiveIdx].id);
+      if (prev) { prev.classList.remove('active'); prev.classList.add('done'); }
+    }
+    // 지나간 것들 done 처리
+    if (cur > lastActiveIdx) {
+      for (let i = Math.max(0, lastActiveIdx); i < cur; i++) {
+        const el = document.getElementById(wordTimings[i].id);
+        if (el) { el.classList.remove('active'); el.classList.add('done'); }
       }
     }
+
+    if (cur >= 0) {
+      const el = document.getElementById(wordTimings[cur].id);
+      if (el) {
+        el.classList.add('active');
+        el.classList.remove('done');
+        el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    }
+    lastActiveIdx = cur;
   }
 
   function escHtml(s) {
