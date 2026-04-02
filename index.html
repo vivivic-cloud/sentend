@@ -29,23 +29,48 @@
       gap: 20px;
     }
 
+    /* 대본 입력 */
     textarea {
       width: 100%;
-      min-height: 220px;
+      min-height: 200px;
       border: none;
       outline: none;
       resize: none;
       font-size: 17px;
-      line-height: 1.8;
+      line-height: 1.85;
       color: #111;
       background: transparent;
       caret-color: #111;
     }
-
     textarea::placeholder { color: #ccc; }
+    textarea.hidden { display: none; }
+
+    /* 싱크 뷰 */
+    .sync-view {
+      display: none;
+      font-size: 17px;
+      line-height: 1.85;
+      color: #ccc;
+      min-height: 200px;
+      word-break: keep-all;
+    }
+    .sync-view.visible { display: block; }
+
+    .word {
+      display: inline;
+      transition: color 0.1s;
+      border-radius: 3px;
+      padding: 0 1px;
+    }
+    .word.active {
+      color: #111;
+      background: #f0f0f0;
+    }
+    .word.done { color: #111; }
 
     .divider { height: 1px; background: #eee; }
 
+    /* 음성 업로드 */
     .upload-btn {
       display: flex;
       align-items: center;
@@ -61,24 +86,34 @@
       text-align: left;
       transition: all 0.15s;
     }
-
-    .upload-btn:active {
-      border-color: #111;
-      color: #111;
-    }
+    .upload-btn:active { border-color: #111; color: #111; }
 
     .player-wrap {
       display: none;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
     }
-
     .player-wrap.visible { display: flex; }
 
-    audio {
+    audio { width: 100%; outline: none; }
+
+    /* 분석 버튼 */
+    .analyze-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #111;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 16px;
+      font-size: 14px;
+      cursor: pointer;
       width: 100%;
-      outline: none;
+      transition: opacity 0.15s;
     }
+    .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .remove-btn {
       background: none;
@@ -90,49 +125,279 @@
       padding: 0;
     }
 
+    .status {
+      font-size: 13px;
+      color: #aaa;
+      text-align: center;
+      min-height: 18px;
+    }
+
+    .pulse { animation: pulse 1s ease-in-out infinite; display: inline-block; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
     #file-input { display: none; }
   </style>
 </head>
 <body>
-  <div class="card">
+<div class="card">
 
-    <textarea placeholder="대본을 입력하세요"></textarea>
+  <!-- 대본 -->
+  <textarea id="textarea" placeholder="대본을 입력하세요"></textarea>
+  <div class="sync-view" id="sync-view"></div>
 
-    <div class="divider"></div>
+  <div class="divider"></div>
 
-    <button class="upload-btn" onclick="document.getElementById('file-input').click()">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M8 1v9M5 4l3-3 3 3" stroke="#aaa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2" stroke="#aaa" stroke-width="1.4" stroke-linecap="round"/>
-      </svg>
-      음성 파일 올리기
-    </button>
+  <!-- 음성 업로드 -->
+  <button class="upload-btn" onclick="document.getElementById('file-input').click()">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1v9M5 4l3-3 3 3" stroke="#aaa" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M2 11v2a1 1 0 001 1h10a1 1 0 001-1v-2" stroke="#aaa" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>
+    음성 파일 올리기
+  </button>
 
-    <div class="player-wrap" id="player-wrap">
-      <audio id="audio" controls></audio>
-      <button class="remove-btn" onclick="removeAudio()">삭제</button>
-    </div>
-
+  <div class="player-wrap" id="player-wrap">
+    <audio id="audio" controls></audio>
+    <button class="analyze-btn" id="analyze-btn" onclick="analyze()" disabled>타이밍 분석하기</button>
+    <button class="remove-btn" onclick="removeAudio()">삭제</button>
   </div>
 
-  <input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
+  <div class="status" id="status"></div>
 
-  <script>
-    function loadAudio(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      document.getElementById('audio').src = url;
-      document.getElementById('player-wrap').classList.add('visible');
-    }
+</div>
 
-    function removeAudio() {
-      const audio = document.getElementById('audio');
-      URL.revokeObjectURL(audio.src);
-      audio.src = '';
-      document.getElementById('player-wrap').classList.remove('visible');
-      document.getElementById('file-input').value = '';
+<input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
+
+<script>
+  // Groq API 키 (localStorage 저장)
+  let GROQ_KEY = localStorage.getItem('groq_key');
+  if (!GROQ_KEY) {
+    GROQ_KEY = prompt('Groq API 키를 입력하세요');
+    if (GROQ_KEY) localStorage.setItem('groq_key', GROQ_KEY);
+  }
+
+  let audioFile = null;
+  let wordTimings = []; // [{word, start, end, elIdx}]
+
+  // ── 파일 로드 ──────────────────────────────────────
+  function loadAudio(e) {
+    audioFile = e.target.files[0];
+    if (!audioFile) return;
+    const url = URL.createObjectURL(audioFile);
+    document.getElementById('audio').src = url;
+    document.getElementById('player-wrap').classList.add('visible');
+    document.getElementById('analyze-btn').disabled = false;
+    document.getElementById('status').textContent = '';
+
+    // 싱크뷰 리셋 → 텍스트 편집으로 복귀
+    resetSyncView();
+  }
+
+  function removeAudio() {
+    const audio = document.getElementById('audio');
+    URL.revokeObjectURL(audio.src);
+    audio.src = '';
+    audioFile = null;
+    document.getElementById('player-wrap').classList.remove('visible');
+    document.getElementById('file-input').value = '';
+    document.getElementById('status').textContent = '';
+    wordTimings = [];
+    resetSyncView();
+  }
+
+  function resetSyncView() {
+    document.getElementById('textarea').classList.remove('hidden');
+    document.getElementById('sync-view').classList.remove('visible');
+    document.getElementById('sync-view').innerHTML = '';
+    wordTimings = [];
+  }
+
+  // ── 분석 ──────────────────────────────────────────
+  async function analyze() {
+    const script = document.getElementById('textarea').value.trim();
+    if (!script) { alert('대본을 먼저 입력해주세요.'); return; }
+    if (!audioFile) { alert('음성 파일을 먼저 올려주세요.'); return; }
+
+    const btn = document.getElementById('analyze-btn');
+    const status = document.getElementById('status');
+    btn.disabled = true;
+    status.innerHTML = '<span class="pulse">● 분석 중...</span>';
+
+    try {
+      const formData = new FormData();
+      formData.append('file', audioFile);
+      formData.append('model', 'whisper-large-v3-turbo');
+      formData.append('response_format', 'verbose_json');
+      formData.append('timestamp_granularities[]', 'word');
+      formData.append('language', 'ko');
+
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${GROQ_KEY}` },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error?.message || '분석 오류');
+      }
+
+      const data = await res.json();
+      const words = data.words || [];
+
+      if (!words.length) throw new Error('단어 타임스탬프를 가져오지 못했습니다.');
+
+      buildSyncView(script, words);
+      status.textContent = '완료 — 재생하면 대본이 따라가요';
+
+    } catch (err) {
+      status.textContent = '오류: ' + err.message;
+      btn.disabled = false;
     }
-  </script>
+  }
+
+  // ── 싱크뷰 빌드 ───────────────────────────────────
+  function normalize(str) {
+    return str.replace(/[\s\.,!?~\-""''「」『』]/g, '').toLowerCase();
+  }
+
+  function buildSyncView(script, apiWords) {
+    // 대본을 단어 단위로 쪼개되 공백/구두점 포함 토큰 유지
+    const tokens = tokenize(script);
+
+    // API 단어와 대본 단어 매핑 (DP 정렬)
+    const scriptWords = tokens.filter(t => t.isWord);
+    const aligned = alignWords(scriptWords.map(t => t.text), apiWords.map(w => w.word));
+
+    // 각 scriptWord에 타임스탬프 부여
+    aligned.forEach(([si, ai]) => {
+      if (si !== null && ai !== null) {
+        scriptWords[si].start = apiWords[ai].start;
+        scriptWords[si].end   = apiWords[ai].end;
+      }
+    });
+
+    // 보간: 타임스탬프 없는 단어는 앞뒤 값으로 추정
+    interpolateTiming(scriptWords);
+
+    // HTML 렌더링
+    wordTimings = [];
+    let html = '';
+    let widx = 0;
+    tokens.forEach(tok => {
+      if (tok.isWord) {
+        const id = `w${widx}`;
+        const sw = scriptWords[widx];
+        wordTimings.push({ start: sw.start ?? 0, end: sw.end ?? 0, id });
+        html += `<span class="word" id="${id}">${escHtml(tok.text)}</span>`;
+        widx++;
+      } else {
+        html += escHtml(tok.text);
+      }
+    });
+
+    const syncView = document.getElementById('sync-view');
+    syncView.innerHTML = html;
+    syncView.classList.add('visible');
+    document.getElementById('textarea').classList.add('hidden');
+
+    // 오디오 timeupdate 연결
+    const audio = document.getElementById('audio');
+    audio.ontimeupdate = () => updateHighlight(audio.currentTime);
+  }
+
+  function tokenize(text) {
+    const tokens = [];
+    let i = 0;
+    while (i < text.length) {
+      // 단어 수집 (한글, 영문, 숫자)
+      if (/[\wㄱ-힣]/.test(text[i])) {
+        let j = i;
+        while (j < text.length && /[\wㄱ-힣]/.test(text[j])) j++;
+        tokens.push({ text: text.slice(i, j), isWord: true });
+        i = j;
+      } else {
+        tokens.push({ text: text[i], isWord: false });
+        i++;
+      }
+    }
+    return tokens;
+  }
+
+  // 단순 LCS 기반 정렬
+  function alignWords(scriptWords, apiWords) {
+    const S = scriptWords.map(normalize);
+    const A = apiWords.map(normalize);
+    const n = S.length, m = A.length;
+    const dp = Array.from({length: n+1}, () => new Array(m+1).fill(0));
+
+    for (let i = 1; i <= n; i++)
+      for (let j = 1; j <= m; j++)
+        dp[i][j] = S[i-1] === A[j-1]
+          ? dp[i-1][j-1] + 1
+          : Math.max(dp[i-1][j], dp[i][j-1]);
+
+    const result = [];
+    let i = n, j = m;
+    while (i > 0 && j > 0) {
+      if (S[i-1] === A[j-1]) { result.push([i-1, j-1]); i--; j--; }
+      else if (dp[i-1][j] >= dp[i][j-1]) i--;
+      else j--;
+    }
+    return result.reverse();
+  }
+
+  function interpolateTiming(words) {
+    // 앞에서 채우기
+    for (let i = 1; i < words.length; i++) {
+      if (words[i].start == null && words[i-1].end != null) {
+        words[i].start = words[i-1].end;
+        words[i].end   = words[i-1].end + 0.3;
+      }
+    }
+    // 뒤에서 채우기
+    for (let i = words.length - 2; i >= 0; i--) {
+      if (words[i].end == null && words[i+1].start != null) {
+        words[i].end   = words[i+1].start;
+        words[i].start = Math.max(0, words[i+1].start - 0.3);
+      }
+    }
+    // 남은 건 0으로
+    words.forEach(w => { w.start = w.start ?? 0; w.end = w.end ?? 0; });
+  }
+
+  // ── 재생 싱크 ─────────────────────────────────────
+  let lastActiveId = null;
+
+  function updateHighlight(t) {
+    for (let i = 0; i < wordTimings.length; i++) {
+      const { start, end, id } = wordTimings[i];
+      const el = document.getElementById(id);
+      if (!el) continue;
+
+      if (t >= start && t < end) {
+        if (lastActiveId !== id) {
+          if (lastActiveId) {
+            const prev = document.getElementById(lastActiveId);
+            if (prev) { prev.classList.remove('active'); prev.classList.add('done'); }
+          }
+          el.classList.add('active');
+          el.classList.remove('done');
+          lastActiveId = id;
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      } else if (t >= end) {
+        el.classList.remove('active');
+        el.classList.add('done');
+      } else {
+        el.classList.remove('active', 'done');
+      }
+    }
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+</script>
 </body>
 </html>
