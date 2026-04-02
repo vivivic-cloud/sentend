@@ -353,41 +353,42 @@
   function buildSyncView(script, apiWords) {
     const tokens = tokenize(script);
     const scriptWords = tokens.filter(t => t.isWord);
-    const totalDuration = Math.max(...apiWords.map(w => w.end));
+    const totalDuration = apiWords[apiWords.length - 1].end;
 
-    // ① 문자 단위 타임라인 구성 (API 기준)
-    const apiNormChars = []; // {char, time}
+    // ① API 단어 → 누적 문자 위치별 타임스탬프 배열 구성
+    const apiCharTimes = []; // index → time (start of that char)
     for (const w of apiWords) {
       const nc = norm(w.word);
       if (!nc.length) continue;
       const perChar = (w.end - w.start) / nc.length;
       for (let i = 0; i < nc.length; i++) {
-        apiNormChars.push({ char: nc[i], time: w.start + i * perChar, endTime: w.start + (i+1) * perChar });
+        apiCharTimes.push(w.start + i * perChar);
       }
     }
+    apiCharTimes.push(totalDuration); // 끝 sentinel
+    const totalApiChars = apiCharTimes.length - 1;
 
-    // ② 대본 정규화 문자열 → API 문자열과 LCS로 정렬
-    const scriptNorm = scriptWords.map(w => norm(w.text));
-    const scriptNormFlat = scriptNorm.join('');
-    const apiNormFlat = apiNormChars.map(c => c.char).join('');
+    // ② 스크립트 정규화 총 글자 수
+    const scriptNormLengths = scriptWords.map(w => norm(w.text).length);
+    const totalScriptChars = scriptNormLengths.reduce((a, b) => a + b, 0);
 
-    // 각 스크립트 단어의 시작/끝 문자 인덱스 → API 타임라인 매핑
-    let charIdx = 0;
+    // ③ 비율 기반 타임스탬프 매핑
+    // 스크립트 글자 위치 / 전체 → API 글자 위치 / 전체 → 시간
+    let scriptCharPos = 0;
     scriptWords.forEach((sw, wi) => {
-      const nc = scriptNorm[wi];
-      if (!nc.length) { sw.start = 0; sw.end = 0; charIdx += nc.length; return; }
+      const len = scriptNormLengths[wi];
+      if (!len) { sw.start = 0; sw.end = 0.05; scriptCharPos += len; return; }
 
-      // scriptNormFlat 내 위치로 API chars에서 찾기
-      const pos = findBestMatch(scriptNormFlat, charIdx, nc.length, apiNormFlat);
-      if (pos !== -1 && pos + nc.length <= apiNormChars.length) {
-        sw.start = apiNormChars[pos].time;
-        sw.end   = apiNormChars[Math.min(pos + nc.length - 1, apiNormChars.length-1)].endTime;
-      }
-      charIdx += nc.length;
+      const startRatio = scriptCharPos / totalScriptChars;
+      const endRatio   = (scriptCharPos + len) / totalScriptChars;
+
+      const apiStart = Math.min(Math.floor(startRatio * totalApiChars), totalApiChars - 1);
+      const apiEnd   = Math.min(Math.ceil(endRatio   * totalApiChars), totalApiChars);
+
+      sw.start = apiCharTimes[apiStart];
+      sw.end   = apiCharTimes[apiEnd];
+      scriptCharPos += len;
     });
-
-    // ③ 앵커 없는 단어 보간
-    fillTiming(scriptWords, totalDuration);
 
     // ④ HTML 렌더링
     wordTimings = [];
@@ -414,29 +415,6 @@
     audio.ontimeupdate = () => updateHighlight(audio.currentTime);
   }
 
-  // 슬라이딩 윈도우로 가장 잘 맞는 위치 탐색
-  function findBestMatch(scriptFlat, from, len, apiFlat) {
-    // scriptFlat[from..from+len] 을 apiFlat에서 찾기
-    const target = scriptFlat.slice(from, from + len);
-    // 비율로 예상 위치 계산
-    const ratio = apiFlat.length / (scriptFlat.length || 1);
-    const expected = Math.round(from * ratio);
-    const window = Math.max(30, Math.round(apiFlat.length * 0.15));
-
-    let bestPos = -1, bestScore = -1;
-    const lo = Math.max(0, expected - window);
-    const hi = Math.min(apiFlat.length - len, expected + window);
-
-    for (let i = lo; i <= hi; i++) {
-      let score = 0;
-      for (let j = 0; j < Math.min(len, apiFlat.length - i); j++) {
-        if (target[j] === apiFlat[i + j]) score++;
-      }
-      if (score > bestScore) { bestScore = score; bestPos = i; }
-    }
-    return bestScore > len * 0.3 ? bestPos : -1;
-  }
-
   function tokenize(text) {
     const tokens = [];
     let i = 0;
@@ -454,53 +432,6 @@
     return tokens;
   }
 
-  function fillTiming(words, totalDuration) {
-    const n = words.length;
-    if (!n) return;
-
-    // 앵커 없으면 균등 분배
-    const hasAny = words.some(w => w.start != null);
-    if (!hasAny) {
-      const dur = totalDuration / n;
-      words.forEach((w, i) => { w.start = i * dur; w.end = (i+1) * dur; });
-      return;
-    }
-
-    // 앵커 사이 선형 보간
-    // 첫 앵커 이전
-    const firstAnchor = words.findIndex(w => w.start != null);
-    for (let i = 0; i < firstAnchor; i++) {
-      const dur = words[firstAnchor].start / (firstAnchor + 1);
-      words[i].start = i * dur;
-      words[i].end = (i+1) * dur;
-    }
-    // 구간별 보간
-    for (let i = firstAnchor; i < n - 1; i++) {
-      if (words[i+1].start == null) {
-        // 다음 앵커 찾기
-        let nextAnchor = -1;
-        for (let k = i+1; k < n; k++) { if (words[k].start != null) { nextAnchor = k; break; } }
-        if (nextAnchor === -1) {
-          // 끝까지 균등
-          const remaining = n - i - 1;
-          const dur = (totalDuration - words[i].end) / (remaining + 1);
-          for (let k = i+1; k < n; k++) {
-            words[k].start = words[i].end + (k - i - 1) * dur;
-            words[k].end = words[k].start + dur;
-          }
-          break;
-        } else {
-          const gap = nextAnchor - i;
-          const segDur = (words[nextAnchor].start - words[i].end) / gap;
-          for (let k = i+1; k < nextAnchor; k++) {
-            words[k].start = words[i].end + (k - i - 1) * segDur;
-            words[k].end = words[k].start + segDur;
-          }
-        }
-      }
-    }
-    words.forEach(w => { w.start = w.start ?? 0; w.end = w.end ?? 0.1; });
-  }
 
   // ── 재생 싱크 ─────────────────────────────────────
   let lastActiveIdx = -1;
