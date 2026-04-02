@@ -164,16 +164,40 @@
 
   <div class="status" id="status"></div>
 
+  <div class="divider"></div>
+
+  <!-- API 키 -->
+  <div id="key-section">
+    <div style="font-size:11px;color:#bbb;margin-bottom:6px;">Groq API Key</div>
+    <div style="display:flex;gap:8px;">
+      <input id="key-input" type="password" placeholder="gsk_..."
+        style="flex:1;border:1px solid #eee;border-radius:8px;padding:8px 12px;font-size:13px;outline:none;" />
+      <button onclick="saveKey()"
+        style="background:#111;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap;">저장</button>
+    </div>
+    <div id="key-status" style="font-size:11px;color:#bbb;margin-top:5px;"></div>
+  </div>
+
 </div>
 
 <input type="file" id="file-input" accept="audio/*" onchange="loadAudio(event)" />
 
 <script>
-  // Groq API 키 (localStorage 저장)
-  let GROQ_KEY = localStorage.getItem('groq_key');
-  if (!GROQ_KEY) {
-    GROQ_KEY = prompt('Groq API 키를 입력하세요');
-    if (GROQ_KEY) localStorage.setItem('groq_key', GROQ_KEY);
+  // Groq API 키
+  let GROQ_KEY = localStorage.getItem('groq_key') || '';
+  const keyInput = document.getElementById('key-input');
+  const keyStatus = document.getElementById('key-status');
+  if (GROQ_KEY) {
+    keyInput.value = GROQ_KEY;
+    keyStatus.textContent = '키 저장됨 ✓';
+  }
+
+  function saveKey() {
+    const v = keyInput.value.trim();
+    if (!v) return;
+    GROQ_KEY = v;
+    localStorage.setItem('groq_key', v);
+    keyStatus.textContent = '저장됨 ✓';
   }
 
   let audioFile = null;
@@ -263,6 +287,8 @@
     const script = document.getElementById('textarea').value.trim();
     if (!script) { alert('대본을 먼저 입력해주세요.'); return; }
     if (!audioFile) { alert('음성 파일을 먼저 올려주세요.'); return; }
+    GROQ_KEY = localStorage.getItem('groq_key') || keyInput.value.trim();
+    if (!GROQ_KEY) { alert('Groq API 키를 먼저 저장해주세요.'); return; }
 
     const btn = document.getElementById('analyze-btn');
     const status = document.getElementById('status');
