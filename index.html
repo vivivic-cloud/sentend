@@ -307,7 +307,7 @@
       formData.append('model', 'whisper-large-v3');
       formData.append('response_format', 'verbose_json');
       formData.append('timestamp_granularities[]', 'word');
-      formData.append('language', 'ko');
+      formData.append('language', 'ja');
 
       const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
@@ -347,7 +347,8 @@
 
   // ── 싱크뷰 빌드 ───────────────────────────────────
   function norm(str) {
-    return str.replace(/[^\wㄱ-힣]/g, '').toLowerCase();
+    // 한글, 일본어(히라가나·가타카나·한자·전각), 영숫자 유지
+    return str.replace(/[^\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]/g, '').toLowerCase();
   }
 
   function buildSyncView(script, apiWords) {
@@ -419,9 +420,9 @@
     const tokens = [];
     let i = 0;
     while (i < text.length) {
-      if (/[\wㄱ-힣]/.test(text[i])) {
+      if (/[\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff]/.test(text[i])) {
         let j = i;
-        while (j < text.length && /[\wㄱ-힣]/.test(text[j])) j++;
+        while (j < text.length && /[\wㄱ-힣\u3040-\u30ff\u4e00-\u9fff]/.test(text[j])) j++;
         tokens.push({ text: text.slice(i, j), isWord: true });
         i = j;
       } else {
